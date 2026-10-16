@@ -1403,3 +1403,499 @@ print("\n" + "=" * 68)
 print("PROJECT COMPLETED")
 print("=" * 68)
 print("Charts and CSV files are in:", OUTPUT_DIR)
+
+
+
+
+# ============================================================
+# EXTRA TITANIC CHARTS — DARK / NEON THEME
+# Add this block to the END of main.py
+# ============================================================
+
+EXTRA_DIR = OUTPUT_DIR / "extra_charts"
+EXTRA_DIR.mkdir(parents=True, exist_ok=True)
+
+BG = "#05070D"
+PANEL = "#101521"
+TEXT = "#F3F4F6"
+GRID = "#293244"
+
+CYAN = "#22D3EE"
+PURPLE = "#A78BFA"
+PINK = "#FB7185"
+GREEN = "#34D399"
+YELLOW = "#FBBF24"
+BLUE = "#60A5FA"
+ORANGE = "#FB923C"
+
+
+def extra_style(ax, title, xlabel=None, ylabel=None):
+    ax.set_facecolor(PANEL)
+    ax.set_title(title, color=TEXT, fontsize=13, fontweight="bold", pad=14)
+
+    if xlabel:
+        ax.set_xlabel(xlabel, color=TEXT, labelpad=8)
+
+    if ylabel:
+        ax.set_ylabel(ylabel, color=TEXT, labelpad=8)
+
+    ax.tick_params(colors=TEXT)
+    ax.grid(axis="y", color=GRID, alpha=0.65, linestyle="--")
+    ax.set_axisbelow(True)
+
+    for spine in ax.spines.values():
+        spine.set_color(GRID)
+
+
+def extra_save(fig, filename):
+    fig.patch.set_facecolor(BG)
+    fig.tight_layout()
+    fig.savefig(
+        EXTRA_DIR / filename,
+        dpi=220,
+        bbox_inches="tight",
+        facecolor=BG
+    )
+    plt.close(fig)
+
+
+# Use the original training data for exploratory charts.
+df = train_raw.copy()
+
+# ------------------------------------------------------------
+# 1. Survival rate by age group
+# ------------------------------------------------------------
+if {"Age", "Survived"}.issubset(df.columns):
+    temp = df[["Age", "Survived"]].dropna().copy()
+
+    temp["AgeGroup"] = pd.cut(
+        temp["Age"],
+        bins=[0, 12, 18, 30, 45, 60, 100],
+        labels=[
+            "0–12", "13–18", "19–30",
+            "31–45", "46–60", "60+"
+        ],
+        include_lowest=True
+    )
+
+    rates = temp.groupby(
+        "AgeGroup", observed=False
+    )["Survived"].mean() * 100
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    bars = ax.bar(
+        rates.index.astype(str),
+        rates.values,
+        color=[CYAN, PURPLE, PINK, GREEN, YELLOW, BLUE],
+        edgecolor=BG,
+        width=0.7
+    )
+
+    for bar, value in zip(bars, rates.values):
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + 1,
+            f"{value:.1f}%",
+            ha="center", color=TEXT, fontsize=9
+        )
+
+    ax.set_ylim(0, 110)
+    extra_style(
+        ax,
+        "Survival Rate by Age Group",
+        "Age group",
+        "Survival rate (%)"
+    )
+    extra_save(fig, "01_survival_by_age_group.png")
+
+
+# ------------------------------------------------------------
+# 2. Survival by passenger class and sex
+# ------------------------------------------------------------
+if {"Pclass", "Sex", "Survived"}.issubset(df.columns):
+    pivot = df.pivot_table(
+        index="Pclass",
+        columns="Sex",
+        values="Survived",
+        aggfunc="mean"
+    ) * 100
+
+    fig, ax = plt.subplots(figsize=(9, 5))
+    pivot.plot(
+        kind="bar",
+        ax=ax,
+        color=[PINK, CYAN],
+        width=0.72
+    )
+
+    ax.set_ylim(0, 110)
+    ax.legend(
+        title="Sex",
+        facecolor=PANEL,
+        labelcolor=TEXT,
+        edgecolor=GRID
+    )
+    extra_style(
+        ax,
+        "Survival by Passenger Class and Sex",
+        "Passenger class",
+        "Survival rate (%)"
+    )
+    ax.set_xticklabels(
+        [str(x) for x in pivot.index],
+        rotation=0
+    )
+    extra_save(fig, "02_survival_class_sex.png")
+
+
+# ------------------------------------------------------------
+# 3. Family size vs survival
+# ------------------------------------------------------------
+if {"SibSp", "Parch", "Survived"}.issubset(df.columns):
+    temp = df.copy()
+    temp["FamilySize"] = temp["SibSp"] + temp["Parch"] + 1
+
+    family_rates = (
+        temp.groupby("FamilySize")["Survived"].mean() * 100
+    )
+
+    # Keep sizes 1–6 separately; group larger families together.
+    family_rates = family_rates[family_rates.index <= 6].copy()
+
+    large = temp[temp["FamilySize"] > 6]
+    if not large.empty:
+        family_rates.loc[7] = large["Survived"].mean() * 100
+
+    labels = [
+        "1" if x == 1 else
+        "2" if x == 2 else
+        "3" if x == 3 else
+        "4" if x == 4 else
+        "5" if x == 5 else
+        "6" if x == 6 else "7+"
+        for x in family_rates.index
+    ]
+
+    fig, ax = plt.subplots(figsize=(9, 5))
+    bars = ax.bar(
+        labels,
+        family_rates.values,
+        color=[PINK, CYAN, PURPLE, GREEN, YELLOW, BLUE, ORANGE][:len(labels)]
+    )
+
+    for bar, value in zip(bars, family_rates.values):
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + 1,
+            f"{value:.1f}%",
+            ha="center", color=TEXT, fontsize=9
+        )
+
+    ax.set_ylim(0, 110)
+    extra_style(
+        ax,
+        "Family Size vs Survival",
+        "Number of family members aboard",
+        "Survival rate (%)"
+    )
+    extra_save(fig, "03_family_size_survival.png")
+
+
+# ------------------------------------------------------------
+# 4. Ticket fare distribution by survival
+# ------------------------------------------------------------
+if {"Fare", "Survived"}.issubset(df.columns):
+    survived_fares = df.loc[df["Survived"] == 1, "Fare"].dropna()
+    died_fares = df.loc[df["Survived"] == 0, "Fare"].dropna()
+
+    fig, ax = plt.subplots(figsize=(9, 5))
+    bp = ax.boxplot(
+        [died_fares, survived_fares],
+        patch_artist=True,
+        tick_labels=["Did not survive", "Survived"],
+        showfliers=False
+    )
+
+    for patch, color in zip(bp["boxes"], [PINK, CYAN]):
+        patch.set_facecolor(color)
+        patch.set_alpha(0.75)
+
+    for element in ["whiskers", "caps", "medians"]:
+        for line in bp[element]:
+            line.set_color(TEXT)
+
+    extra_style(
+        ax,
+        "Ticket Fare Distribution by Survival",
+        "Outcome",
+        "Fare"
+    )
+    extra_save(fig, "04_fare_distribution.png")
+
+
+# ------------------------------------------------------------
+# 5. Survival by embarkation port
+# ------------------------------------------------------------
+if {"Embarked", "Survived"}.issubset(df.columns):
+    ports = (
+        df.groupby("Embarked")["Survived"]
+        .mean()
+        .mul(100)
+        .dropna()
+        .sort_values(ascending=False)
+    )
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    bars = ax.bar(
+        ports.index,
+        ports.values,
+        color=[CYAN, PURPLE, PINK][:len(ports)]
+    )
+
+    for bar, value in zip(bars, ports.values):
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + 1,
+            f"{value:.1f}%",
+            ha="center", color=TEXT
+        )
+
+    ax.set_ylim(0, 110)
+    extra_style(
+        ax,
+        "Survival Rate by Embarkation Port",
+        "Port (C, Q, S)",
+        "Survival rate (%)"
+    )
+    extra_save(fig, "05_embarkation_survival.png")
+
+
+# ------------------------------------------------------------
+# 6. Correlation heatmap — Matplotlib only
+# ------------------------------------------------------------
+numeric = df.select_dtypes(include=np.number)
+
+if numeric.shape[1] >= 2:
+    corr = numeric.corr()
+
+    fig, ax = plt.subplots(figsize=(10, 8))
+    image = ax.imshow(
+        corr.values,
+        cmap="cool",
+        vmin=-1,
+        vmax=1,
+        aspect="auto"
+    )
+
+    ax.set_xticks(range(len(corr.columns)))
+    ax.set_yticks(range(len(corr.columns)))
+    ax.set_xticklabels(
+        corr.columns, rotation=45, ha="right", color=TEXT
+    )
+    ax.set_yticklabels(corr.columns, color=TEXT)
+
+    for i in range(len(corr.columns)):
+        for j in range(len(corr.columns)):
+            value = corr.iloc[i, j]
+            ax.text(
+                j, i, f"{value:.2f}",
+                ha="center", va="center",
+                color=TEXT, fontsize=8
+            )
+
+    ax.set_title(
+        "Numeric Feature Correlation Matrix",
+        color=TEXT, fontsize=14, fontweight="bold", pad=16
+    )
+
+    fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04)
+    extra_save(fig, "06_correlation_heatmap.png")
+
+
+# ------------------------------------------------------------
+# 7. Age distribution by survival
+# ------------------------------------------------------------
+if {"Age", "Survived"}.issubset(df.columns):
+    fig, ax = plt.subplots(figsize=(10, 5))
+
+    ax.hist(
+        df.loc[df["Survived"] == 0, "Age"].dropna(),
+        bins=25, alpha=0.75,
+        color=PINK, label="Did not survive"
+    )
+    ax.hist(
+        df.loc[df["Survived"] == 1, "Age"].dropna(),
+        bins=25, alpha=0.65,
+        color=CYAN, label="Survived"
+    )
+
+    ax.legend(
+        facecolor=PANEL,
+        labelcolor=TEXT,
+        edgecolor=GRID
+    )
+    extra_style(ax, "Age Distribution by Survival", "Age", "Passengers")
+    extra_save(fig, "07_age_distribution.png")
+
+
+# ------------------------------------------------------------
+# 8. Model metrics comparison
+# ------------------------------------------------------------
+if isinstance(results_df, pd.DataFrame) and not results_df.empty:
+    # Accept common naming variations in the results table.
+    normalized = {
+        str(column).strip().lower().replace(" ", "").replace("_", ""): column
+        for column in results_df.columns
+    }
+
+    model_col = next(
+        (normalized[k] for k in ["model", "name", "classifier"]
+         if k in normalized),
+        results_df.columns[0]
+    )
+
+    metric_aliases = {
+        "Accuracy": ["accuracy", "acc"],
+        "Precision": ["precision", "prec"],
+        "Recall": ["recall"],
+        "F1": ["f1", "f1score", "f1_score"]
+    }
+
+    metric_cols = {}
+    for label, aliases in metric_aliases.items():
+        for alias in aliases:
+            if alias in normalized:
+                metric_cols[label] = normalized[alias]
+                break
+
+    if metric_cols:
+        plot_df = results_df.copy()
+
+        # Sort by F1 if available.
+        if "F1" in metric_cols:
+            plot_df = plot_df.sort_values(
+                metric_cols["F1"], ascending=True
+            )
+
+        fig, ax = plt.subplots(figsize=(12, 7))
+        y_positions = np.arange(len(plot_df))
+        metric_colors = [CYAN, PURPLE, PINK, GREEN]
+
+        for (label, column), color in zip(
+            metric_cols.items(), metric_colors
+        ):
+            values = pd.to_numeric(
+                plot_df[column], errors="coerce"
+            )
+
+            # Convert proportions to percentages if values are 0–1.
+            if values.dropna().size and values.max() <= 1:
+                values = values * 100
+
+            ax.plot(
+                values,
+                y_positions,
+                marker="o",
+                linewidth=2,
+                markersize=5,
+                label=label,
+                color=color
+            )
+
+        ax.set_yticks(y_positions)
+        ax.set_yticklabels(
+            plot_df[model_col].astype(str),
+            color=TEXT,
+            fontsize=9
+        )
+        ax.set_xlim(0, 105)
+        ax.legend(
+            facecolor=PANEL,
+            labelcolor=TEXT,
+            edgecolor=GRID
+        )
+
+        extra_style(
+            ax,
+            "Model Performance: Metric Comparison",
+            "Score (%)",
+            "Model"
+        )
+        extra_save(fig, "08_model_metrics_comparison.png")
+
+
+# ------------------------------------------------------------
+# 9. Feature distributions: survived vs not survived
+# ------------------------------------------------------------
+for column, filename, title in [
+    ("SibSp", "09_siblings_spouses.png", "Siblings / Spouses Aboard"),
+    ("Parch", "10_parents_children.png", "Parents / Children Aboard")
+]:
+    if {column, "Survived"}.issubset(df.columns):
+        fig, ax = plt.subplots(figsize=(9, 5))
+
+        groups = []
+        labels = []
+
+        for outcome, label in [(0, "Did not survive"), (1, "Survived")]:
+            values = df.loc[df["Survived"] == outcome, column].dropna()
+            groups.append(values)
+            labels.append(label)
+
+        bp = ax.boxplot(
+            groups,
+            patch_artist=True,
+            tick_labels=labels,
+            showfliers=False
+        )
+
+        for patch, color in zip(bp["boxes"], [PINK, CYAN]):
+            patch.set_facecolor(color)
+            patch.set_alpha(0.75)
+
+        for element in ["whiskers", "caps", "medians"]:
+            for line in bp[element]:
+                line.set_color(TEXT)
+
+        extra_style(ax, title, "Outcome", column)
+        extra_save(fig, filename)
+
+
+# ------------------------------------------------------------
+# 10. Survival count by passenger class
+# ------------------------------------------------------------
+if {"Pclass", "Survived"}.issubset(df.columns):
+    counts = pd.crosstab(df["Pclass"], df["Survived"])
+    counts = counts.rename(
+        columns={0: "Did not survive", 1: "Survived"}
+    )
+
+    fig, ax = plt.subplots(figsize=(9, 5))
+    counts.plot(
+        kind="bar",
+        stacked=True,
+        ax=ax,
+        color=[PINK, CYAN],
+        width=0.68
+    )
+
+    ax.legend(
+        facecolor=PANEL,
+        labelcolor=TEXT,
+        edgecolor=GRID
+    )
+    extra_style(
+        ax,
+        "Passenger Outcomes by Class",
+        "Passenger class",
+        "Number of passengers"
+    )
+    ax.set_xticklabels(
+        [str(x) for x in counts.index],
+        rotation=0
+    )
+    extra_save(fig, "11_passenger_class_counts.png")
+
+
+print(f"\nExtra charts saved to: {EXTRA_DIR}")
+print("Extra chart generation complete!")
