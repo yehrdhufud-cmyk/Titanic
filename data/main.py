@@ -1,9 +1,3 @@
-
-# ==============================================================
-# TITANIC MACHINE LEARNING LAB
-# Pandas | NumPy | Matplotlib | Scikit-learn | PyTorch
-# ==============================================================
-
 import random
 from pathlib import Path
 
@@ -13,7 +7,6 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 
-from sklearn.base import clone
 from sklearn.model_selection import train_test_split
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
@@ -40,6 +33,7 @@ from sklearn.ensemble import (
 )
 from sklearn.naive_bayes import GaussianNB
 from sklearn.neural_network import MLPClassifier
+from sklearn.base import clone
 
 
 # ==============================================================
@@ -51,8 +45,12 @@ EPOCHS = 100
 PATIENCE = 15
 BATCH_SIZE = 32
 
-OUTPUT_DIR = Path("outputs")
+BASE_DIR = Path(__file__).resolve().parent
+OUTPUT_DIR = BASE_DIR / "outputs"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+TRAIN_PATH = BASE_DIR / "train.csv"
+TEST_PATH = BASE_DIR / "test.csv"
 
 random.seed(SEED)
 np.random.seed(SEED)
@@ -102,14 +100,14 @@ plt.rcParams.update({
     "savefig.facecolor": COLORS["background"],
 })
 
-print("=" * 68)
-print("TITANIC MACHINE LEARNING LAB")
-print("=" * 68)
+print("=" * 60)
+print("TITANIC MACHINE LEARNING PROJECT")
+print("=" * 60)
 print("Device:", DEVICE)
 
 
 # ==============================================================
-# 2. PLOTTING UTILITIES
+# 2. PLOTTING FUNCTIONS
 # ==============================================================
 
 def style_axis(ax, title, xlabel=None, ylabel=None):
@@ -127,6 +125,7 @@ def style_axis(ax, title, xlabel=None, ylabel=None):
         alpha=0.55,
         linewidth=0.8,
     )
+
     ax.set_axisbelow(True)
 
     for spine in ["top", "right"]:
@@ -146,17 +145,24 @@ def save_figure(fig, filename):
         facecolor=fig.get_facecolor(),
     )
 
-    print(f"Saved chart: {path}")
+    print("Saved chart:", path)
 
 
 def add_bar_labels(ax, bars, percent=False):
     for bar in bars:
         value = bar.get_height()
-        label = f"{value:.1%}" if percent else f"{value:.3f}"
+
+        if percent:
+            label = f"{value:.1%}"
+        else:
+            label = f"{value:.3f}"
 
         ax.annotate(
             label,
-            (bar.get_x() + bar.get_width() / 2, value),
+            (
+                bar.get_x() + bar.get_width() / 2,
+                value,
+            ),
             xytext=(0, 5),
             textcoords="offset points",
             ha="center",
@@ -171,41 +177,69 @@ def add_bar_labels(ax, bars, percent=False):
 # 3. LOAD DATA
 # ==============================================================
 
-data_path = Path("data/train.csv")
-
-if not data_path.exists():
+if not TRAIN_PATH.exists():
     raise FileNotFoundError(
-        "File not found: data/train.csv\n"
-        "Place train.csv inside the project's data folder."
+        "train.csv must be in the same folder as this Python file."
     )
 
-train = pd.read_csv(data_path)
+if not TEST_PATH.exists():
+    raise FileNotFoundError(
+        "test.csv must be in the same folder as this Python file."
+    )
 
-required_columns = {
-    "PassengerId", "Survived", "Pclass", "Name", "Sex",
-    "Age", "SibSp", "Parch", "Ticket", "Fare", "Cabin", "Embarked"
+train = pd.read_csv(TRAIN_PATH)
+test = pd.read_csv(TEST_PATH)
+
+required_train_columns = {
+    "PassengerId",
+    "Survived",
+    "Pclass",
+    "Name",
+    "Sex",
+    "Age",
+    "SibSp",
+    "Parch",
+    "Ticket",
+    "Fare",
+    "Cabin",
+    "Embarked",
 }
 
-missing_columns = required_columns - set(train.columns)
+required_test_columns = required_train_columns - {"Survived"}
 
-if missing_columns:
-    raise ValueError(f"Missing columns: {sorted(missing_columns)}")
+missing_train = required_train_columns - set(train.columns)
+missing_test = required_test_columns - set(test.columns)
 
-print("\nDataset shape:", train.shape)
-print("\nFirst five rows:")
+if missing_train:
+    raise ValueError(
+        f"Missing columns in train.csv: {sorted(missing_train)}"
+    )
+
+if missing_test:
+    raise ValueError(
+        f"Missing columns in test.csv: {sorted(missing_test)}"
+    )
+
+print("\nTraining shape:", train.shape)
+print("Test shape:", test.shape)
+
+print("\nTraining data:")
 print(train.head())
 
-print("\nColumn data types:")
-print(train.dtypes)
+print("\nTest data:")
+print(test.head())
 
-print("\nMissing values:")
+print("\nMissing values in training data:")
 print(train.isnull().sum())
 
-print("\nTarget distribution:")
-print(train["Survived"].value_counts().sort_index())
+print("\nMissing values in test data:")
+print(test.isnull().sum())
 
-print("\nTarget proportions:")
-print(train["Survived"].value_counts(normalize=True).sort_index().round(3))
+print("\nSurvival distribution:")
+print(train["Survived"].value_counts())
+
+print("\nSurvival proportions:")
+print(train["Survived"].value_counts(normalize=True).round(3))
 
 
 # ==============================================================
@@ -223,42 +257,70 @@ print(survival_by_sex.round(3))
 
 class_rates = survival_by_class.to_numpy(dtype=np.float64)
 
-print("\nMean of class survival rates:", round(float(np.mean(class_rates)), 4))
-print("Standard deviation:", round(float(np.std(class_rates)), 4))
+print(
+    "\nMean class survival rate:",
+    round(float(np.mean(class_rates)), 4),
+)
 
-# Four-panel EDA dashboard
+print(
+    "Standard deviation:",
+    round(float(np.std(class_rates)), 4),
+)
+
+
 fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
 fig.subplots_adjust(
-    left=0.09, right=0.96, top=0.83, bottom=0.10,
-    hspace=0.42, wspace=0.25,
+    left=0.09,
+    right=0.96,
+    top=0.83,
+    bottom=0.10,
+    hspace=0.42,
+    wspace=0.25,
 )
 
 fig.suptitle(
     "TITANIC | EXPLORATORY DATA ANALYSIS",
-    x=0.09, y=0.96, ha="left", fontsize=20,
+    x=0.09,
+    y=0.96,
+    ha="left",
+    fontsize=20,
 )
 
 fig.text(
-    0.09, 0.91,
+    0.09,
+    0.91,
     "Passenger demographics and survival patterns",
     color=COLORS["muted"],
 )
 
 # Survival by class
 ax = axes[0, 0]
+
 bars = ax.bar(
     survival_by_class.index.astype(str),
     survival_by_class.values,
-    color=[COLORS["purple"], COLORS["blue"], COLORS["cyan"]],
+    color=[
+        COLORS["purple"],
+        COLORS["blue"],
+        COLORS["cyan"],
+    ],
     width=0.58,
 )
 
-style_axis(ax, "Survival Rate by Class", "Passenger class", "Survival rate")
+style_axis(
+    ax,
+    "Survival Rate by Class",
+    "Passenger class",
+    "Survival rate",
+)
+
 ax.set_ylim(0, 1.12)
 add_bar_labels(ax, bars, percent=True)
 
 # Survival by sex
 ax = axes[0, 1]
+
 sex_rates = survival_by_sex.sort_values(ascending=False)
 
 bars = ax.bar(
@@ -271,12 +333,19 @@ bars = ax.bar(
     width=0.58,
 )
 
-style_axis(ax, "Survival Rate by Sex", "Sex", "Survival rate")
+style_axis(
+    ax,
+    "Survival Rate by Sex",
+    "Sex",
+    "Survival rate",
+)
+
 ax.set_ylim(0, 1.12)
 add_bar_labels(ax, bars, percent=True)
 
 # Age distribution
 ax = axes[1, 0]
+
 ages = train["Age"].dropna()
 
 ax.hist(
@@ -295,22 +364,36 @@ ax.axvline(
     label=f"Median: {ages.median():.1f}",
 )
 
-style_axis(ax, "Passenger Age Distribution", "Age", "Number of passengers")
+style_axis(
+    ax,
+    "Passenger Age Distribution",
+    "Age",
+    "Number of passengers",
+)
+
 ax.legend(frameon=False, labelcolor=COLORS["text"])
 
 # Survival by age group
 ax = axes[1, 1]
+
 age_data = train[["Age", "Survived"]].dropna().copy()
 
 age_data["Age Group"] = pd.cut(
     age_data["Age"],
     bins=[0, 12, 18, 35, 60, np.inf],
-    labels=["Child", "Teen", "Young adult", "Adult", "Senior"],
+    labels=[
+        "Child",
+        "Teen",
+        "Young adult",
+        "Adult",
+        "Senior",
+    ],
     include_lowest=True,
 )
 
 age_survival = age_data.groupby(
-    "Age Group", observed=False
+    "Age Group",
+    observed=False,
 )["Survived"].mean()
 
 bars = ax.bar(
@@ -320,9 +403,16 @@ bars = ax.bar(
     width=0.65,
 )
 
-style_axis(ax, "Survival Rate by Age Group", "Age group", "Survival rate")
+style_axis(
+    ax,
+    "Survival Rate by Age Group",
+    "Age group",
+    "Survival rate",
+)
+
 ax.set_ylim(0, 1.12)
 ax.tick_params(axis="x", rotation=12)
+
 add_bar_labels(ax, bars, percent=True)
 
 save_figure(fig, "01_eda_dashboard.png")
@@ -336,9 +426,17 @@ plt.show()
 def create_features(data):
     data = data.copy()
 
-    data["FamilySize"] = data["SibSp"] + data["Parch"] + 1
-    data["IsAlone"] = (data["FamilySize"] == 1).astype(int)
+    # Total number of family members travelling together
+    data["FamilySize"] = (
+        data["SibSp"] + data["Parch"] + 1
+    )
 
+    # Whether the passenger travelled alone
+    data["IsAlone"] = (
+        data["FamilySize"] == 1
+    ).astype(int)
+
+    # Extract passenger title from name
     data["Title"] = data["Name"].str.extract(
         r",\s*([^.]*)\.",
         expand=False,
@@ -353,29 +451,54 @@ def create_features(data):
         "Title",
     ] = "Other"
 
+    # Extract cabin deck
     data["Deck"] = (
-        data["Cabin"].astype("string").str[0].fillna("Unknown")
+        data["Cabin"]
+        .astype("string")
+        .str[0]
+        .fillna("Unknown")
     )
 
     return data
 
 
 train_features = create_features(train)
+test_features = create_features(test)
 
 FEATURES = [
-    "Pclass", "Sex", "Age", "SibSp", "Parch", "Fare",
-    "Embarked", "FamilySize", "IsAlone", "Title", "Deck",
+    "Pclass",
+    "Sex",
+    "Age",
+    "SibSp",
+    "Parch",
+    "Fare",
+    "Embarked",
+    "FamilySize",
+    "IsAlone",
+    "Title",
+    "Deck",
 ]
 
 NUMERIC_FEATURES = [
-    "Pclass", "Age", "SibSp", "Parch", "Fare",
-    "FamilySize", "IsAlone",
+    "Pclass",
+    "Age",
+    "SibSp",
+    "Parch",
+    "Fare",
+    "FamilySize",
+    "IsAlone",
 ]
 
-CATEGORICAL_FEATURES = ["Sex", "Embarked", "Title", "Deck"]
+CATEGORICAL_FEATURES = [
+    "Sex",
+    "Embarked",
+    "Title",
+    "Deck",
+]
 
 X = train_features[FEATURES]
 y = train_features["Survived"].astype("int64")
+X_test = test_features[FEATURES]
 
 X_train, X_valid, y_train, y_valid = train_test_split(
     X,
@@ -385,31 +508,49 @@ X_train, X_valid, y_train, y_valid = train_test_split(
     stratify=y,
 )
 
-print("\nTraining rows:", len(X_train))
-print("Validation rows:", len(X_valid))
+print("\nTraining split rows:", len(X_train))
+print("Validation split rows:", len(X_valid))
 
 
 # ==============================================================
 # 6. PREPROCESSING FOR CLASSICAL MODELS
 # ==============================================================
 
-preprocessor = ColumnTransformer([
-    (
-        "numeric",
-        SimpleImputer(strategy="median"),
-        NUMERIC_FEATURES,
-    ),
-    (
-        "categorical",
-        Pipeline([
-            ("imputer", SimpleImputer(strategy="most_frequent")),
-            ("encoder", OneHotEncoder(handle_unknown="ignore")),
-        ]),
-        CATEGORICAL_FEATURES,
-    ),
-])
+def make_classical_preprocessor():
+    numeric_pipeline = Pipeline([
+        (
+            "imputer",
+            SimpleImputer(strategy="median"),
+        ),
+    ])
 
-# Fit only on training data
+    categorical_pipeline = Pipeline([
+        (
+            "imputer",
+            SimpleImputer(strategy="most_frequent"),
+        ),
+        (
+            "encoder",
+            OneHotEncoder(handle_unknown="ignore"),
+        ),
+    ])
+
+    return ColumnTransformer([
+        (
+            "numeric",
+            numeric_pipeline,
+            NUMERIC_FEATURES,
+        ),
+        (
+            "categorical",
+            categorical_pipeline,
+            CATEGORICAL_FEATURES,
+        ),
+    ])
+
+
+preprocessor = make_classical_preprocessor()
+
 X_train_processed = preprocessor.fit_transform(X_train)
 X_valid_processed = preprocessor.transform(X_valid)
 
@@ -419,10 +560,16 @@ if hasattr(X_train_processed, "toarray"):
 if hasattr(X_valid_processed, "toarray"):
     X_valid_processed = X_valid_processed.toarray()
 
-X_train_processed = np.asarray(X_train_processed, dtype=np.float64)
-X_valid_processed = np.asarray(X_valid_processed, dtype=np.float64)
+X_train_processed = np.asarray(
+    X_train_processed,
+    dtype=np.float64,
+)
 
-# Scale features for distance-based models and neural networks
+X_valid_processed = np.asarray(
+    X_valid_processed,
+    dtype=np.float64,
+)
+
 scaler = StandardScaler()
 
 X_train_scaled = scaler.fit_transform(X_train_processed)
@@ -430,22 +577,33 @@ X_valid_scaled = scaler.transform(X_valid_processed)
 
 
 # ==============================================================
-# 7. TRAIN AND COMPARE CLASSICAL MODELS
+# 7. CLASSICAL MACHINE LEARNING MODELS
 # ==============================================================
 
 models = {
     "Logistic Regression": (
-        LogisticRegression(max_iter=2000, random_state=SEED),
+        LogisticRegression(
+            max_iter=2000,
+            random_state=SEED,
+        ),
         "scaled",
     ),
+
     "KNN": (
         KNeighborsClassifier(n_neighbors=7),
         "scaled",
     ),
+
     "SVM (RBF)": (
-        SVC(C=1.0, kernel="rbf", probability=True, random_state=SEED),
+        SVC(
+            C=1.0,
+            kernel="rbf",
+            probability=True,
+            random_state=SEED,
+        ),
         "scaled",
     ),
+
     "Decision Tree": (
         DecisionTreeClassifier(
             max_depth=5,
@@ -454,6 +612,7 @@ models = {
         ),
         "raw",
     ),
+
     "Random Forest": (
         RandomForestClassifier(
             n_estimators=300,
@@ -462,6 +621,7 @@ models = {
         ),
         "raw",
     ),
+
     "Extra Trees": (
         ExtraTreesClassifier(
             n_estimators=300,
@@ -470,10 +630,14 @@ models = {
         ),
         "raw",
     ),
+
     "Gradient Boosting": (
-        GradientBoostingClassifier(random_state=SEED),
+        GradientBoostingClassifier(
+            random_state=SEED,
+        ),
         "raw",
     ),
+
     "Hist Gradient Boosting": (
         HistGradientBoostingClassifier(
             max_iter=150,
@@ -481,14 +645,20 @@ models = {
         ),
         "raw",
     ),
+
     "AdaBoost": (
-        AdaBoostClassifier(n_estimators=100, random_state=SEED),
+        AdaBoostClassifier(
+            n_estimators=100,
+            random_state=SEED,
+        ),
         "raw",
     ),
+
     "Gaussian Naive Bayes": (
         GaussianNB(),
         "raw",
     ),
+
     "MLP (Scikit-learn)": (
         MLPClassifier(
             hidden_layer_sizes=(64, 32),
@@ -500,6 +670,7 @@ models = {
     ),
 }
 
+
 results = []
 trained_models = {}
 
@@ -508,14 +679,18 @@ print("TRAINING CLASSICAL MODELS")
 print("=" * 60)
 
 for name, (estimator, representation) in models.items():
+
     print(f"\nTraining {name}...")
 
     if representation == "scaled":
-        Xtr, Xva = X_train_scaled, X_valid_scaled
+        Xtr = X_train_scaled
+        Xva = X_valid_scaled
     else:
-        Xtr, Xva = X_train_processed, X_valid_processed
+        Xtr = X_train_processed
+        Xva = X_valid_processed
 
     model = clone(estimator)
+
     model.fit(Xtr, y_train)
 
     predictions = model.predict(Xva)
@@ -524,13 +699,19 @@ for name, (estimator, representation) in models.items():
         "Model": name,
         "Accuracy": accuracy_score(y_valid, predictions),
         "Precision": precision_score(
-            y_valid, predictions, zero_division=0
+            y_valid,
+            predictions,
+            zero_division=0,
         ),
         "Recall": recall_score(
-            y_valid, predictions, zero_division=0
+            y_valid,
+            predictions,
+            zero_division=0,
         ),
         "F1 Score": f1_score(
-            y_valid, predictions, zero_division=0
+            y_valid,
+            predictions,
+            zero_division=0,
         ),
     }
 
@@ -547,11 +728,14 @@ for name, (estimator, representation) in models.items():
         f"F1: {row['F1 Score']:.4f}"
     )
 
+
 results_df = pd.DataFrame(results)
 
 print("\nCLASSICAL MODEL RESULTS")
+
 print(
-    results_df.sort_values("F1 Score", ascending=False)
+    results_df
+    .sort_values("F1 Score", ascending=False)
     .round(4)
     .to_string(index=False)
 )
@@ -561,13 +745,22 @@ results_df.to_csv(
     index=False,
 )
 
-# Keep these variables available for final comparison
-rf_predictions = trained_models["Random Forest"]["predictions"]
-rf_accuracy = accuracy_score(y_valid, rf_predictions)
+rf_predictions = trained_models[
+    "Random Forest"
+]["predictions"]
 
 print("\nRandom Forest classification report:")
-print(classification_report(y_valid, rf_predictions, zero_division=0))
+
+print(
+    classification_report(
+        y_valid,
+        rf_predictions,
+        zero_division=0,
+    )
+)
+
 print("Random Forest confusion matrix:")
+
 print(confusion_matrix(y_valid, rf_predictions))
 
 
@@ -575,24 +768,44 @@ print(confusion_matrix(y_valid, rf_predictions))
 # 8. PREPARE DATA FOR PYTORCH
 # ==============================================================
 
-torch_preprocessor = ColumnTransformer([
-    (
-        "numeric",
-        Pipeline([
-            ("imputer", SimpleImputer(strategy="median")),
-            ("scaler", StandardScaler()),
-        ]),
-        NUMERIC_FEATURES,
-    ),
-    (
-        "categorical",
-        Pipeline([
-            ("imputer", SimpleImputer(strategy="most_frequent")),
-            ("encoder", OneHotEncoder(handle_unknown="ignore")),
-        ]),
-        CATEGORICAL_FEATURES,
-    ),
-])
+def make_torch_preprocessor():
+    numeric_pipeline = Pipeline([
+        (
+            "imputer",
+            SimpleImputer(strategy="median"),
+        ),
+        (
+            "scaler",
+            StandardScaler(),
+        ),
+    ])
+
+    categorical_pipeline = Pipeline([
+        (
+            "imputer",
+            SimpleImputer(strategy="most_frequent"),
+        ),
+        (
+            "encoder",
+            OneHotEncoder(handle_unknown="ignore"),
+        ),
+    ])
+
+    return ColumnTransformer([
+        (
+            "numeric",
+            numeric_pipeline,
+            NUMERIC_FEATURES,
+        ),
+        (
+            "categorical",
+            categorical_pipeline,
+            CATEGORICAL_FEATURES,
+        ),
+    ])
+
+
+torch_preprocessor = make_torch_preprocessor()
 
 X_train_torch = torch_preprocessor.fit_transform(X_train)
 X_valid_torch = torch_preprocessor.transform(X_valid)
@@ -603,14 +816,26 @@ if hasattr(X_train_torch, "toarray"):
 if hasattr(X_valid_torch, "toarray"):
     X_valid_torch = X_valid_torch.toarray()
 
-X_train_torch = np.asarray(X_train_torch, dtype=np.float32)
-X_valid_torch = np.asarray(X_valid_torch, dtype=np.float32)
+X_train_torch = np.asarray(
+    X_train_torch,
+    dtype=np.float32,
+)
 
-y_train_torch = y_train.to_numpy(dtype=np.float32).reshape(-1, 1)
+X_valid_torch = np.asarray(
+    X_valid_torch,
+    dtype=np.float32,
+)
+
+y_train_torch = y_train.to_numpy(
+    dtype=np.float32,
+).reshape(-1, 1)
 
 X_train_tensor = torch.from_numpy(X_train_torch)
 y_train_tensor = torch.from_numpy(y_train_torch)
-X_valid_tensor = torch.from_numpy(X_valid_torch).to(DEVICE)
+
+X_valid_tensor = torch.from_numpy(
+    X_valid_torch
+).to(DEVICE)
 
 
 # ==============================================================
@@ -618,6 +843,7 @@ X_valid_tensor = torch.from_numpy(X_valid_torch).to(DEVICE)
 # ==============================================================
 
 class TitanicNet(nn.Module):
+
     def __init__(self, input_size):
         super().__init__()
 
@@ -637,7 +863,9 @@ class TitanicNet(nn.Module):
         return self.network(x)
 
 
-nn_model = TitanicNet(X_train_tensor.shape[1]).to(DEVICE)
+nn_model = TitanicNet(
+    X_train_tensor.shape[1]
+).to(DEVICE)
 
 criterion = nn.BCEWithLogitsLoss()
 
@@ -672,19 +900,24 @@ print("TRAINING PYTORCH NEURAL NETWORK")
 print("=" * 60)
 
 for epoch in range(EPOCHS):
+
     nn_model.train()
+
     total_loss = 0.0
 
     for batch_X, batch_y in train_loader:
+
         batch_X = batch_X.to(DEVICE)
         batch_y = batch_y.to(DEVICE)
 
         optimizer.zero_grad()
 
         logits = nn_model(batch_X)
+
         loss = criterion(logits, batch_y)
 
         loss.backward()
+
         optimizer.step()
 
         total_loss += loss.item() * len(batch_X)
@@ -694,8 +927,14 @@ for epoch in range(EPOCHS):
     nn_model.eval()
 
     with torch.no_grad():
-        validation_logits = nn_model(X_valid_tensor)
-        validation_probs = torch.sigmoid(validation_logits)
+
+        validation_logits = nn_model(
+            X_valid_tensor
+        )
+
+        validation_probs = torch.sigmoid(
+            validation_logits
+        )
 
         validation_predictions = (
             (validation_probs >= 0.5)
@@ -706,13 +945,18 @@ for epoch in range(EPOCHS):
         )
 
     validation_accuracy = accuracy_score(
-        y_valid, validation_predictions
+        y_valid,
+        validation_predictions,
     )
 
     history["loss"].append(average_loss)
-    history["validation_accuracy"].append(validation_accuracy)
+
+    history["validation_accuracy"].append(
+        validation_accuracy
+    )
 
     if validation_accuracy > best_accuracy:
+
         best_accuracy = validation_accuracy
 
         best_state = {
@@ -721,6 +965,7 @@ for epoch in range(EPOCHS):
         }
 
         epochs_without_improvement = 0
+
     else:
         epochs_without_improvement += 1
 
@@ -735,13 +980,16 @@ for epoch in range(EPOCHS):
         print(f"Early stopping at epoch {epoch + 1}")
         break
 
+
 if best_state is not None:
     nn_model.load_state_dict(best_state)
 
 nn_model.eval()
 
 with torch.no_grad():
+
     final_logits = nn_model(X_valid_tensor)
+
     final_probs = torch.sigmoid(final_logits)
 
     nn_predictions = (
@@ -752,71 +1000,137 @@ with torch.no_grad():
         .ravel()
     )
 
-nn_accuracy = accuracy_score(y_valid, nn_predictions)
+
+nn_accuracy = accuracy_score(
+    y_valid,
+    nn_predictions,
+)
 
 nn_result = {
     "Model": "PyTorch Neural Network",
+
     "Accuracy": nn_accuracy,
+
     "Precision": precision_score(
-        y_valid, nn_predictions, zero_division=0
+        y_valid,
+        nn_predictions,
+        zero_division=0,
     ),
+
     "Recall": recall_score(
-        y_valid, nn_predictions, zero_division=0
+        y_valid,
+        nn_predictions,
+        zero_division=0,
     ),
+
     "F1 Score": f1_score(
-        y_valid, nn_predictions, zero_division=0
+        y_valid,
+        nn_predictions,
+        zero_division=0,
     ),
 }
 
 print("\nPyTorch accuracy:", f"{nn_accuracy:.4f}")
+
 print("\nPyTorch classification report:")
-print(classification_report(y_valid, nn_predictions, zero_division=0))
+
+print(
+    classification_report(
+        y_valid,
+        nn_predictions,
+        zero_division=0,
+    )
+)
+
 print("PyTorch confusion matrix:")
-print(confusion_matrix(y_valid, nn_predictions))
+
+print(
+    confusion_matrix(
+        y_valid,
+        nn_predictions,
+    )
+)
 
 
 # ==============================================================
 # 10. PYTORCH TRAINING DASHBOARD
 # ==============================================================
 
-epochs = np.arange(1, len(history["loss"]) + 1)
+epochs = np.arange(
+    1,
+    len(history["loss"]) + 1,
+)
 
-fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+fig, axes = plt.subplots(
+    1,
+    2,
+    figsize=(13, 5),
+)
+
 fig.subplots_adjust(
-    left=0.08, right=0.96, top=0.80, bottom=0.15, wspace=0.28
+    left=0.08,
+    right=0.96,
+    top=0.80,
+    bottom=0.15,
+    wspace=0.28,
 )
 
 fig.suptitle(
     "PYTORCH | TRAINING PERFORMANCE",
-    x=0.08, y=0.95, ha="left", fontsize=19,
+    x=0.08,
+    y=0.95,
+    ha="left",
+    fontsize=19,
 )
 
 fig.text(
-    0.08, 0.88,
+    0.08,
+    0.88,
     "Optimization and validation monitoring",
     color=COLORS["muted"],
 )
 
+# Training loss
 ax = axes[0]
-ax.plot(
-    epochs, history["loss"],
-    color=COLORS["purple"], linewidth=2.8,
-)
-ax.fill_between(
-    epochs, history["loss"],
-    color=COLORS["purple"], alpha=0.13,
-)
-style_axis(ax, "Training Loss", "Epoch", "Binary cross-entropy loss")
 
-ax = axes[1]
 ax.plot(
-    epochs, history["validation_accuracy"],
-    color=COLORS["green"], linewidth=2.8,
+    epochs,
+    history["loss"],
+    color=COLORS["purple"],
+    linewidth=2.8,
 )
+
 ax.fill_between(
-    epochs, history["validation_accuracy"],
-    color=COLORS["green"], alpha=0.13,
+    epochs,
+    history["loss"],
+    color=COLORS["purple"],
+    alpha=0.13,
 )
+
+style_axis(
+    ax,
+    "Training Loss",
+    "Epoch",
+    "Binary cross-entropy loss",
+)
+
+# Validation accuracy
+ax = axes[1]
+
+ax.plot(
+    epochs,
+    history["validation_accuracy"],
+    color=COLORS["green"],
+    linewidth=2.8,
+)
+
+ax.fill_between(
+    epochs,
+    history["validation_accuracy"],
+    color=COLORS["green"],
+    alpha=0.13,
+)
+
 ax.axhline(
     best_accuracy,
     color=COLORS["orange"],
@@ -824,16 +1138,31 @@ ax.axhline(
     linewidth=1.5,
     label=f"Best: {best_accuracy:.1%}",
 )
-style_axis(ax, "Validation Accuracy", "Epoch", "Accuracy")
-ax.set_ylim(0, 1.05)
-ax.legend(frameon=False, labelcolor=COLORS["text"])
 
-save_figure(fig, "02_pytorch_training.png")
+style_axis(
+    ax,
+    "Validation Accuracy",
+    "Epoch",
+    "Accuracy",
+)
+
+ax.set_ylim(0, 1.05)
+
+ax.legend(
+    frameon=False,
+    labelcolor=COLORS["text"],
+)
+
+save_figure(
+    fig,
+    "02_pytorch_training.png",
+)
+
 plt.show()
 
 
 # ==============================================================
-# 11. FINAL MODEL LEADERBOARD
+# 11. MODEL LEADERBOARD
 # ==============================================================
 
 all_results = pd.concat(
@@ -844,38 +1173,47 @@ all_results = pd.concat(
     ignore_index=True,
 )
 
-all_results = all_results.sort_values(
-    "F1 Score", ascending=True
-).reset_index(drop=True)
+all_results = (
+    all_results
+    .sort_values("F1 Score", ascending=True)
+    .reset_index(drop=True)
+)
 
 all_results.to_csv(
     OUTPUT_DIR / "all_model_results.csv",
     index=False,
 )
 
-print("\n" + "=" * 75)
+print("\n" + "=" * 70)
 print("FINAL MODEL LEADERBOARD")
-print("=" * 75)
+print("=" * 70)
 
 print(
-    all_results.sort_values("F1 Score", ascending=False)
+    all_results
+    .sort_values("F1 Score", ascending=False)
     .round(4)
     .to_string(index=False)
 )
 
-# Chart A: F1 leaderboard
+
+# F1 score comparison
 fig, ax = plt.subplots(figsize=(12, 8))
-fig.subplots_adjust(left=0.30, right=0.94, top=0.88, bottom=0.12)
 
-bar_colors = []
+fig.subplots_adjust(
+    left=0.30,
+    right=0.94,
+    top=0.88,
+    bottom=0.12,
+)
 
-for name in all_results["Model"]:
-    if name == "PyTorch Neural Network":
-        bar_colors.append(COLORS["purple"])
-    elif name == "Random Forest":
-        bar_colors.append(COLORS["cyan"])
-    else:
-        bar_colors.append(COLORS["blue"])
+bar_colors = [
+    COLORS["purple"]
+    if name == "PyTorch Neural Network"
+    else COLORS["cyan"]
+    if name == "Random Forest"
+    else COLORS["blue"]
+    for name in all_results["Model"]
+]
 
 bars = ax.barh(
     all_results["Model"],
@@ -884,12 +1222,30 @@ bars = ax.barh(
     height=0.68,
 )
 
-style_axis(ax, "MODEL LEADERBOARD", "Model", "F1 score for survivors")
-ax.set_xlim(0, 1.0)
-ax.grid(axis="x", color=COLORS["grid"], alpha=0.55)
-ax.grid(axis="y", visible=False)
+style_axis(
+    ax,
+    "MODEL LEADERBOARD",
+    "Model",
+    "F1 score for survivors",
+)
 
-for bar, score in zip(bars, all_results["F1 Score"]):
+ax.set_xlim(0, 1.0)
+
+ax.grid(
+    axis="x",
+    color=COLORS["grid"],
+    alpha=0.55,
+)
+
+ax.grid(
+    axis="y",
+    visible=False,
+)
+
+for bar, score in zip(
+    bars,
+    all_results["F1 Score"],
+):
     ax.text(
         min(score + 0.015, 0.94),
         bar.get_y() + bar.get_height() / 2,
@@ -899,16 +1255,35 @@ for bar, score in zip(bars, all_results["F1 Score"]):
         fontweight="bold",
     )
 
-save_figure(fig, "03_model_f1_leaderboard.png")
+save_figure(
+    fig,
+    "03_model_f1_leaderboard.png",
+)
+
 plt.show()
 
-# Chart B: Compare metrics for every model
-metric_columns = ["Accuracy", "Precision", "Recall", "F1 Score"]
+
+# Comparison of all metrics
+metric_columns = [
+    "Accuracy",
+    "Precision",
+    "Recall",
+    "F1 Score",
+]
 
 fig, ax = plt.subplots(figsize=(14, 8))
-fig.subplots_adjust(left=0.30, right=0.96, top=0.88, bottom=0.12)
 
-y_positions = np.arange(len(all_results))
+fig.subplots_adjust(
+    left=0.30,
+    right=0.96,
+    top=0.88,
+    bottom=0.12,
+)
+
+y_positions = np.arange(
+    len(all_results)
+)
+
 bar_height = 0.19
 
 metric_colors = [
@@ -921,6 +1296,7 @@ metric_colors = [
 for index, (metric, color) in enumerate(
     zip(metric_columns, metric_colors)
 ):
+
     ax.barh(
         y_positions + (index - 1.5) * bar_height,
         all_results[metric],
@@ -930,11 +1306,27 @@ for index, (metric, color) in enumerate(
     )
 
 ax.set_yticks(y_positions)
-ax.set_yticklabels(all_results["Model"])
+
+ax.set_yticklabels(
+    all_results["Model"]
+)
+
 ax.set_xlim(0, 1.0)
+
 ax.set_xlabel("Score")
-ax.set_title("ALL MODELS | METRIC COMPARISON", loc="left", pad=14)
-ax.grid(axis="x", color=COLORS["grid"], alpha=0.55)
+
+ax.set_title(
+    "ALL MODELS | METRIC COMPARISON",
+    loc="left",
+    pad=14,
+)
+
+ax.grid(
+    axis="x",
+    color=COLORS["grid"],
+    alpha=0.55,
+)
+
 ax.set_axisbelow(True)
 
 for spine in ["top", "right"]:
@@ -950,26 +1342,43 @@ ax.legend(
     ncol=2,
 )
 
-save_figure(fig, "04_all_metrics.png")
+save_figure(
+    fig,
+    "04_all_metrics.png",
+)
+
 plt.show()
 
 
 # ==============================================================
-# 12. CONFUSION MATRIX FOR THE TOP MODEL
+# 12. CONFUSION MATRIX
 # ==============================================================
 
 best_name = all_results.loc[
-    all_results["F1 Score"].idxmax(), "Model"
+    all_results["F1 Score"].idxmax(),
+    "Model",
 ]
 
 if best_name == "PyTorch Neural Network":
+
     best_predictions = nn_predictions
+
 else:
-    best_predictions = trained_models[best_name]["predictions"]
 
-cm = confusion_matrix(y_valid, best_predictions, labels=[0, 1])
+    best_predictions = trained_models[
+        best_name
+    ]["predictions"]
 
-fig, ax = plt.subplots(figsize=(7, 6))
+
+cm = confusion_matrix(
+    y_valid,
+    best_predictions,
+    labels=[0, 1],
+)
+
+fig, ax = plt.subplots(
+    figsize=(7, 6),
+)
 
 image = ax.imshow(
     cm,
@@ -977,16 +1386,30 @@ image = ax.imshow(
     interpolation="nearest",
 )
 
-ax.set_title(f"CONFUSION MATRIX | {best_name}", loc="left", pad=16)
+ax.set_title(
+    f"CONFUSION MATRIX | {best_name}",
+    loc="left",
+    pad=16,
+)
+
 ax.set_xlabel("Predicted label")
 ax.set_ylabel("Actual label")
-ax.set_xticks([0, 1], labels=["Did not survive", "Survived"])
-ax.set_yticks([0, 1], labels=["Did not survive", "Survived"])
+
+ax.set_xticks(
+    [0, 1],
+    labels=["Did not survive", "Survived"],
+)
+
+ax.set_yticks(
+    [0, 1],
+    labels=["Did not survive", "Survived"],
+)
 
 threshold = cm.max() / 2 if cm.size else 0
 
 for row in range(cm.shape[0]):
     for col in range(cm.shape[1]):
+
         ax.text(
             col,
             row,
@@ -995,31 +1418,151 @@ for row in range(cm.shape[0]):
             va="center",
             fontsize=16,
             fontweight="bold",
-            color="white" if cm[row, col] > threshold else "black",
+            color=(
+                "white"
+                if cm[row, col] > threshold
+                else "black"
+            ),
         )
 
-fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04)
+fig.colorbar(
+    image,
+    ax=ax,
+    fraction=0.046,
+    pad=0.04,
+)
 
-save_figure(fig, "05_best_model_confusion_matrix.png")
+save_figure(
+    fig,
+    "05_best_model_confusion_matrix.png",
+)
+
 plt.show()
 
 
 # ==============================================================
-# 13. SUMMARY
+# 13. TRAIN FINAL MODEL AND PREDICT test.csv
 # ==============================================================
 
-best_row = all_results.loc[all_results["F1 Score"].idxmax()]
+# Select the best classical model using validation F1.
+best_classical_name = results_df.loc[
+    results_df["F1 Score"].idxmax(),
+    "Model",
+]
+
+best_estimator, best_representation = models[
+    best_classical_name
+]
+
+# Fit preprocessing on all labeled training rows.
+final_preprocessor = make_classical_preprocessor()
+
+X_full_processed = final_preprocessor.fit_transform(X)
+X_test_processed = final_preprocessor.transform(X_test)
+
+if hasattr(X_full_processed, "toarray"):
+    X_full_processed = X_full_processed.toarray()
+
+if hasattr(X_test_processed, "toarray"):
+    X_test_processed = X_test_processed.toarray()
+
+X_full_processed = np.asarray(
+    X_full_processed,
+    dtype=np.float64,
+)
+
+X_test_processed = np.asarray(
+    X_test_processed,
+    dtype=np.float64,
+)
+
+if best_representation == "scaled":
+
+    final_scaler = StandardScaler()
+
+    X_full_final = final_scaler.fit_transform(
+        X_full_processed
+    )
+
+    X_test_final = final_scaler.transform(
+        X_test_processed
+    )
+
+else:
+
+    X_full_final = X_full_processed
+    X_test_final = X_test_processed
+
+
+final_model = clone(best_estimator)
+
+final_model.fit(
+    X_full_final,
+    y,
+)
+
+test_predictions = final_model.predict(
+    X_test_final
+).astype(int)
+
+
+# Save Kaggle-style submission
+submission = pd.DataFrame({
+    "PassengerId": test["PassengerId"],
+    "Survived": test_predictions,
+})
+
+submission_path = OUTPUT_DIR / "submission.csv"
+
+submission.to_csv(
+    submission_path,
+    index=False,
+)
+
+
+# ==============================================================
+# 14. PROJECT SUMMARY
+# ==============================================================
 
 print("\n" + "=" * 60)
 print("PROJECT SUMMARY")
 print("=" * 60)
-print("Number of classical models:", len(models))
-print("Number of models compared:", len(all_results))
-print("Top model by survivor F1:", best_row["Model"])
-print(f"Accuracy:  {best_row['Accuracy']:.4f}")
-print(f"Precision: {best_row['Precision']:.4f}")
-print(f"Recall:    {best_row['Recall']:.4f}")
-print(f"F1 score:  {best_row['F1 Score']:.4f}")
 
-print("\nOutputs saved in:", OUTPUT_DIR.resolve())
-print("Project completed successfully!")
+print("Classical models:", len(models))
+print("Total models compared:", len(all_results))
+
+print(
+    "Best model overall by validation F1:",
+    best_name,
+)
+
+print(
+    "Best classical model by validation F1:",
+    best_classical_name,
+)
+
+best_row = all_results.loc[
+    all_results["F1 Score"].idxmax()
+]
+
+print(
+    f"Validation accuracy:  {best_row['Accuracy']:.4f}"
+)
+
+print(
+    f"Validation precision: {best_row['Precision']:.4f}"
+)
+
+print(
+    f"Validation recall:    {best_row['Recall']:.4f}"
+)
+
+print(
+    f"Validation F1 score:  {best_row['F1 Score']:.4f}"
+)
+
+print("Test rows predicted:", len(submission))
+print("Submission saved to:", submission_path)
+print("Charts and result tables saved in:", OUTPUT_DIR.resolve())
+
+print("\nProject completed successfully!")
