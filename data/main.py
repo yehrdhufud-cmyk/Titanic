@@ -1899,3 +1899,225 @@ if {"Pclass", "Survived"}.issubset(df.columns):
 
 print(f"\nExtra charts saved to: {EXTRA_DIR}")
 print("Extra chart generation complete!")
+
+
+# ============================================================
+# TRAIN vs TEST COMPARISON CHARTS
+# ============================================================
+
+print("\nGenerating Train vs Test comparison charts...")
+
+
+# ============================================================
+# TRAIN vs TEST COMPARISON CHARTS
+# ============================================================
+
+print("\nGenerating Train vs Test comparison charts...")
+
+# 1. Compare dataset sizes
+fig, ax = plt.subplots(figsize=(9, 5))
+
+dataset_sizes = [len(train_raw), len(test_raw)]
+
+bars = ax.bar(
+    ["Train", "Test"],
+    dataset_sizes,
+    color=[COLORS["cyan"], COLORS["pink"]],
+    width=0.55,
+)
+
+style_axis(
+    ax,
+    "Train vs Test | Dataset Size",
+    "Dataset",
+    "Number of passengers",
+)
+
+for bar in bars:
+    height = bar.get_height()
+    ax.text(
+        bar.get_x() + bar.get_width() / 2,
+        height,
+        f"{int(height):,}",
+        ha="center",
+        va="bottom",
+        color=COLORS["text"],
+        fontsize=11,
+        fontweight="bold",
+    )
+
+save_figure(fig, "train_test_dataset_size.png")
+
+
+# 2. Compare missing-value percentages
+common_columns = [
+    col for col in train_raw.columns
+    if col in test_raw.columns and col != "PassengerId"
+]
+
+missing_train = train_raw[common_columns].isna().mean() * 100
+missing_test = test_raw[common_columns].isna().mean() * 100
+
+missing_comparison = pd.DataFrame({
+    "Train": missing_train,
+    "Test": missing_test,
+})
+
+missing_comparison = missing_comparison.loc[
+    (missing_comparison["Train"] > 0)
+    | (missing_comparison["Test"] > 0)
+]
+
+if not missing_comparison.empty:
+    missing_comparison = missing_comparison.sort_values(
+        "Train",
+        ascending=True,
+    )
+
+    fig, ax = plt.subplots(figsize=(11, 7))
+
+    y = np.arange(len(missing_comparison))
+    bar_height = 0.36
+
+    ax.barh(
+        y - bar_height / 2,
+        missing_comparison["Train"],
+        height=bar_height,
+        label="Train",
+        color=COLORS["cyan"],
+    )
+
+    ax.barh(
+        y + bar_height / 2,
+        missing_comparison["Test"],
+        height=bar_height,
+        label="Test",
+        color=COLORS["pink"],
+    )
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(missing_comparison.index)
+
+    style_axis(
+        ax,
+        "Train vs Test | Missing Values",
+        "Missing values (%)",
+        "Feature",
+    )
+
+    ax.legend(
+        facecolor=COLORS["panel"],
+        labelcolor=COLORS["text"],
+        edgecolor=COLORS["grid"],
+    )
+
+    save_figure(fig, "train_test_missing_values.png")
+
+
+# 3. Compare numerical feature distributions
+for column in ["Age", "Fare"]:
+    if column not in train_raw.columns or column not in test_raw.columns:
+        continue
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+
+    ax.hist(
+        train_raw[column].dropna(),
+        bins=30,
+        alpha=0.65,
+        color=COLORS["cyan"],
+        label="Train",
+        density=True,
+    )
+
+    ax.hist(
+        test_raw[column].dropna(),
+        bins=30,
+        alpha=0.55,
+        color=COLORS["pink"],
+        label="Test",
+        density=True,
+    )
+
+    style_axis(
+        ax,
+        f"Train vs Test | {column} Distribution",
+        column,
+        "Density",
+    )
+
+    ax.legend(
+        facecolor=COLORS["panel"],
+        labelcolor=COLORS["text"],
+        edgecolor=COLORS["grid"],
+    )
+
+    save_figure(fig, f"train_test_{column.lower()}_distribution.png")
+
+
+# 4. Compare categorical feature distributions
+for column in ["Sex", "Pclass", "Embarked"]:
+    if column not in train_raw.columns or column not in test_raw.columns:
+        continue
+
+    train_pct = (
+        train_raw[column].fillna("Missing")
+        .astype(str)
+        .value_counts(normalize=True) * 100
+    )
+
+    test_pct = (
+        test_raw[column].fillna("Missing")
+        .astype(str)
+        .value_counts(normalize=True) * 100
+    )
+
+    categories = sorted(
+        set(train_pct.index) | set(test_pct.index)
+    )
+
+    comparison = pd.DataFrame({
+        "Train": train_pct.reindex(categories, fill_value=0),
+        "Test": test_pct.reindex(categories, fill_value=0),
+    })
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+
+    x = np.arange(len(categories))
+    width = 0.36
+
+    ax.bar(
+        x - width / 2,
+        comparison["Train"],
+        width,
+        color=COLORS["cyan"],
+        label="Train",
+    )
+
+    ax.bar(
+        x + width / 2,
+        comparison["Test"],
+        width,
+        color=COLORS["pink"],
+        label="Test",
+    )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(categories)
+
+    style_axis(
+        ax,
+        f"Train vs Test | {column} Distribution",
+        column,
+        "Percentage (%)",
+    )
+
+    ax.legend(
+        facecolor=COLORS["panel"],
+        labelcolor=COLORS["text"],
+        edgecolor=COLORS["grid"],
+    )
+
+    save_figure(fig, f"train_test_{column.lower()}_distribution.png")
+
+print("Train vs Test comparison charts completed.")
